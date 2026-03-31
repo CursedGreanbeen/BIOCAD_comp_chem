@@ -19,6 +19,7 @@ def generate_3d(mol):
     success = AllChem.EmbedMolecule(mol, params)
     if success == -1:
         print(f'Error: RDKit couldn\'t generate 3D')
+    AllChem.MMFFOptimizeMolecule(mol)
     return mol
 
 
@@ -29,19 +30,23 @@ def rdkit_to_pybel(rdkit_mol):
 
 
 def read_sdf(input_sdf):
+    name_counts = defaultdict(int)
     with Chem.SDMolSupplier(input_sdf) as suppl:
         for mol in suppl:
             if mol is None:
                 continue
 
             name = mol.GetProp('_Name') if mol.HasProp('_Name') else "unknown"
+            mol_name = deduplicate(name, name_counts)
             mol_h = Chem.AddHs(mol)
-            mol_3d = generate_3d(mol_h)
+            if mol_h.GetNumConformers() == 0:
+                generate_3d(mol_h)
             # mol_3d.SetProp('_Name', name)
-            yield mol_3d, name
+            yield mol_h, mol_name
 
 
 def read_smiles(input_smi):
+    name_counts = defaultdict(int)
     with open(input_smi, 'r') as smiles:
         next(smiles)
         for mol in smiles:
@@ -49,11 +54,13 @@ def read_smiles(input_smi):
                 continue
 
             mol, name = mol.strip().split()
+            mol_name = deduplicate(name, name_counts)
             mol = Chem.MolFromSmiles(mol)
             mol_h = Chem.AddHs(mol)
-            mol_3d = generate_3d(mol_h)
+            if mol_h.GetNumConformers() == 0:
+                generate_3d(mol_h)
             # mol_3d.SetProp('_Name', name) if name else mol_3d.SetProp('_Name', "unknown")
-            yield mol_3d, name
+            yield mol_h, mol_name
 
 
 def convert_to_pdbqt(rdkit_mol, mol_name, out_dir):
@@ -70,15 +77,15 @@ def convert_to_pdbqt(rdkit_mol, mol_name, out_dir):
         print(f"Error: {e}\nCouldn't covert {mol_name}")
 
 
-input_dir = input()
-path = os.listdir(input_dir)
-output_dir = r'converted_pdbqts'
-for file in path:
-    if ('.sdf' in file) and ('_temp' not in file):
-        name_counts = defaultdict(int)
-        for mol, name in read_sdf(Path(file)):
-            convert_to_pdbqt(mol, name, output_dir)
-    elif '.smi' in file:
-        name_counts = defaultdict(int)
-        for mol, name in read_smiles(Path(file)):
-            convert_to_pdbqt(mol, name, output_dir)
+if __name__ == '__main__':
+    print('Enter path: ')
+    input_dir = input()
+    path = os.listdir(input_dir)
+    output_dir = r'converted_pdbqts'
+    for file in path:
+        if '.sdf' in file:
+            for mol, name in read_sdf(Path(file)):
+                convert_to_pdbqt(mol, name, output_dir)
+        elif '.smi' in file:
+            for mol, name in read_smiles(Path(file)):
+                convert_to_pdbqt(mol, name, output_dir)

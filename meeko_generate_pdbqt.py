@@ -19,6 +19,7 @@ def generate_3d(mol):
     success = AllChem.EmbedMolecule(mol, params)
     if success == -1:
         print(f'Error: RDKit couldn\'t generate 3D')
+    AllChem.MMFFOptimizeMolecule(mol)
     return mol
 
 
@@ -33,7 +34,7 @@ def read_sdf(input_sdf):
             mol_name = deduplicate(name, name_counts)
             mol_h = Chem.AddHs(mol)
             mol_3d = generate_3d(mol_h)
-            
+
             yield mol_3d, mol_name
 
 
@@ -50,36 +51,39 @@ def read_smiles(input_smi):
             mol = Chem.MolFromSmiles(mol)
             mol_h = Chem.AddHs(mol)
             mol_3d = generate_3d(mol_h)
-            
+
             yield mol_3d, mol_name
 
 
 def convert_to_pdbqt(rdkit_mol, mol_name, out_dir):
     os.makedirs(out_dir, exist_ok=True)
     prepper = MoleculePreparation(
-            break_macrocycles=True,    
-            min_macrocycle_size=6,     
-            max_macrocycle_size=15    
-        )
+        min_ring_size=6,
+        max_ring_size=15
+    )
 
-    try:
-        prepper.prepare(rdkit_mol)
-        pdbqt_string = prepper.write_pdbqt_string() 
-        with open(f"{out_dir}/{name}.pdbqt", "w") as f:
-            f.write(pdbqt_string)       
-        print(f"Converted {mol_name} to {mol_name}.pdbqt")
+    prepared_strings = prepper.prepare(rdkit_mol)
+    for string in prepared_strings:
+        try:
+            pdbqt_string = PDBQTWriterLegacy.write_string(string)
+            with open(f"{out_dir}/{mol_name}.pdbqt", "w") as f:
+                f.write(pdbqt_string[0])
 
-    except Exception as e:
-        print(f"Error: {e}\nCouldn't convert {mol_name}")
+            print(f"Converted {mol_name} to {mol_name}.pdbqt")
+
+        except Exception as e:
+            print(f"Error: {e}\nCouldn't convert {mol_name}")
 
 
-input_dir = input()
-path = os.listdir(input_dir)
-output_dir = r'converted_pdbqts'
-for file in path:
-    if ('.sdf' in file) and ('_temp' not in file):
-        for mol, name in read_sdf(Path(file)):
-            convert_to_pdbqt(mol, name, output_dir)
-    elif '.smi' in file:
-        for mol, name in read_smiles(Path(file)):
-            convert_to_pdbqt(mol, name, output_dir)
+if __name__ == '__main__':
+    print('Enter path: ')
+    input_dir = input()
+    path = os.listdir(input_dir)
+    output_dir = r'converted_pdbqts'
+    for file in path:
+        if '.sdf' in file:
+            for mol, name in read_sdf(Path(file)):
+                convert_to_pdbqt(mol, name, output_dir)
+        elif '.smi' in file:
+            for mol, name in read_smiles(Path(file)):
+                convert_to_pdbqt(mol, name, output_dir)
